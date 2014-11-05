@@ -2,7 +2,7 @@
 %% @doc @todo Add description to analog_input.
 
 
--module(analog_input).
+-module(test_analog_input).
 -export([start/0]).
 
 -define(LED1, 11).
@@ -17,9 +17,7 @@ setup() ->
     asip:set_pin_mode(?LED1, output),
     asip:set_pin_mode(?LED2, output),
     asip:set_pin_mode(?LED3, output),
-    asip:set_pin_mode(?LED3, output),
     asip:set_pin_mode(?POTPIN + 14, analog), % see racket file for explanation
-    
     asip:digital_write(?LED1, 0),
     asip:digital_write(?LED2, 0),
     asip:digital_write(?LED3, 0),

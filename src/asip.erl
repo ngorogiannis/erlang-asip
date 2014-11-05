@@ -14,8 +14,6 @@
    ]).
 %-compile(export_all).
 
-%% assumption: ports are always exactly 8 bits long.
-
 %http://stackoverflow.com/questions/4517393/opening-a-device-file-using-erlang
 
 % *** ASIP GENERIC CONSTANTS ***
@@ -44,15 +42,6 @@
 -define(PORT_MAPPING ,          "M").
 
 % Pin modes
-%% -define(UNKNOWN_MODE          ,  0).
-%% -define(INPUT_MODE            ,  1).
-%% -define(INPUT_PULLUP_MODE     ,  2).
-%% -define(OUTPUT_MODE           ,  3).
-%% -define(ANALOG_MODE           ,  4).
-%% -define(PWM_MODE              ,  5).
-%% -define(RESERVED_MODE         ,  6).
-%% -define(OTHER_SERVICE_MODE    ,  7).
-
 translate_mode(unknown)         -> "0";
 translate_mode(input)           -> "1";
 translate_mode(input_pullup)    -> "2";
@@ -62,6 +51,7 @@ translate_mode(pwm)             -> "5";
 translate_mode(reserved)        -> "6";
 translate_mode(other)           -> "7".
 
+% these are 1 and 0 in the protocol itself so no point in having macros
 %% -define(HIGH ,                   1).
 %% -define(LOW  ,                   0).
 % *** END ASIP CONSTANTS FOR I/O SERVICE ***
@@ -111,13 +101,13 @@ update_digital_pin(BitPos, Pin, {Bitmask, DPM}) ->
 
 update_port_data(Port, Bitmask, State) ->
     DPM = get_dpm(State),
-    PMP = get_pmp(State),
-    case maps:get(Port, PMP) of
-        {ok, PortMap} ->
-            NewDPM = maps:fold(fun update_digital_pin/3, {Bitmask, DPM}, PortMap),
-            set_dpm(NewDPM, State);
-        error ->
-            State
+    case maps:get(Port, get_pmp(State), not_found) of
+        not_found ->
+            State;
+        PortMap ->
+            {_,  NewDPM} = 
+                maps:fold(fun update_digital_pin/3, {Bitmask, DPM}, PortMap),
+            set_dpm(NewDPM, State)
     end.
 
 get_digital_pin(Pin, State) -> maps:get(Pin, get_dpm(State)).    
@@ -170,12 +160,12 @@ process_port_map_pair(Pair, {Pin, State}) ->
 
 % process pin data change
 process_input(
-  << ?EVENT_HANDLER, ?IO_SERVICE, ?COMMA, ?PORT_DATA, ?COMMA, BinPair >>, State) ->
-    log("Got port data: ~p~n", BinPair),
-    {DecPort, HexBitmask} = decode_pair(BinPair),
+  << ?EVENT_HANDLER, ?IO_SERVICE, ?COMMA, ?PORT_DATA, ?COMMA, BinPair/binary >>, State) ->
+%%     log("Got port data: ~p~n", [BinPair]),
+    [DecPort, HexBitmask] = binary:split(BinPair, << ?COMMA >>),
     Port = binary_to_integer(DecPort, 10), 
     Bitmask = binary_to_integer(HexBitmask, 16),
-    log("Port = ~B, Bitmask = ~.2B~n", [Port, Bitmask]),
+%%     log("Port = ~B, Bitmask = ~.2B~n", [Port, Bitmask]),
     update_port_data(Port, Bitmask, State);
 
 % process port mapping
@@ -230,7 +220,17 @@ main_loop(In, Out, State) ->
     receive
         {In, {data, {_, Data}}} ->
 %%             log("RECEIVED: ## ~s ##~n", [Data]),
-            NewState = process_input(Data, State),
+            NewState = 
+                try
+                    process_input(Data, State)
+                catch
+                    error:{badmatch, _} ->
+                        log("UNPARSEABLE: ## ~s ##~n", [Data]),
+                        State;
+                    error:{badarg, _} ->
+                        log("UNPARSEABLE: ## ~s ##~n", [Data]),
+                        State
+                end,
 %%             log("New state: ~p~n", [NewState]),
             main_loop(In, Out, NewState);
         {wstring, String} ->
@@ -246,7 +246,7 @@ main_loop(In, Out, State) ->
             log("Got EOF from serial input.~n", []),
             terminate(In, Out, 1);
         close ->
-            log("Shutting down mail loop...", []),
+            log("Shutting down main loop...", []),
             terminate(In, Out, 0)
     end.
 
@@ -265,12 +265,9 @@ main_hook() ->
 start() -> 
     log("Starting main thread ...~n"),
     register(mainproc, spawn(fun () -> main_hook() end)),
-    timer:sleep(200),
+    timer:sleep(100),
     request_port_mapping(),
-    timer:sleep(200),
-    request_port_mapping(),
-    timer:sleep(200),
-    request_port_mapping().
+    timer:sleep(100).
 
 finish() ->
     mainproc ! close. % this must be !, not port_command

@@ -2,7 +2,7 @@
 %% @doc @todo Add description to blinkled.
 
 
--module(blinkleds).
+-module(test_blinkleds).
 -export([start/0]).
 
 -define(LED1, 11).
@@ -20,7 +20,6 @@ loop() ->
     timer:sleep(1000),
     asip:digital_write(?LED3, 0),
     asip:digital_write(?LED1, 1),
-    timer:sleep(1000),
     loop().   
 
 start() ->
